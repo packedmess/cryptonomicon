@@ -90,11 +90,33 @@
           Добавить
         </button>
       </section>
-
+      <hr class="w-full border-t border-gray-600 my-4" />
+      <section>
+        <span class="block text-sm font-medium text-gray-700">Фильтр</span
+        ><input
+          v-model="filter"
+          type="text"
+          name="filter"
+          id="filter"
+          class="block w-full max-w-xs pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
+        /><button
+          v-if="page > 1"
+          @click="page = page - 1"
+          class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+        >
+          Назад</button
+        ><button
+          v-if="hasNextPage"
+          @click="page = page + 1"
+          class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+        >
+          Вперед
+        </button>
+      </section>
       <hr class="w-full border-t border-gray-600 my-4" />
       <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
         <div
-          v-for="t of tickers"
+          v-for="t of filteredTickers()"
           :key="t.name"
           @click="select(t)"
           :class="{ 'border-4': selected === t }"
@@ -177,34 +199,72 @@
 <script>
 export default {
   name: 'App',
+
   data() {
     return {
       ticker: null,
       tickers: [],
       selected: null,
       graph: [],
+      page: 1,
+      filter: '',
+      hasNextPage: false,
     };
   },
+
+  created() {
+    const tickersData = localStorage.getItem('cryptonomicon-list');
+
+    if (tickersData) {
+      this.tickers = JSON.parse(tickersData);
+
+      this.tickers.forEach((ticker) => {
+        this.subscribeToUpdate(ticker.name);
+      });
+    }
+  },
+
   methods: {
+    filteredTickers() {
+      const tickersPerPage = 6;
+      const start = (this.page - 1) * tickersPerPage;
+      const end = this.page * tickersPerPage;
+
+      const filteredTickers = this.tickers.filter(({ name }) =>
+        name.includes(this.filter.toUpperCase())
+      );
+
+      this.hasNextPage = filteredTickers.length > end;
+
+      return filteredTickers.slice(start, end);
+    },
+
+    subscribeToUpdate(tickerName) {
+      setInterval(async () => {
+        const res = await fetch(
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=251276a2538de3fd4275e212abd35cb77179037356523f87bc8d7cbd7778092d`
+        );
+
+        const data = await res.json();
+
+        this.tickers.find((item) => item.name === tickerName).price =
+          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+
+        if (this.selected?.name === tickerName) {
+          this.graph.push(data.USD);
+        }
+      }, 3000);
+    },
     add() {
       const currentTicker = { name: this.ticker, price: '-' };
 
       this.tickers.push(currentTicker);
 
-      setInterval(async () => {
-        const res = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=251276a2538de3fd4275e212abd35cb77179037356523f87bc8d7cbd7778092d`
-        );
+      this.filter = '';
 
-        const data = await res.json();
+      localStorage.setItem('cryptonomicon-list', JSON.stringify(this.tickers));
 
-        this.tickers.find((item) => item.name === currentTicker.name).price =
-          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-
-        if (this.selected?.name === currentTicker.name) {
-          this.graph.push(data.USD);
-        }
-      }, 3000);
+      this.subscribeToUpdate(currentTicker.name);
 
       this.ticker = '';
     },
@@ -225,7 +285,11 @@ export default {
       this.graph = [];
     },
   },
+
+  watch: {
+    filter() {
+      this.page = 1;
+    },
+  },
 };
 </script>
-
-<style src="./app.css"></style>
